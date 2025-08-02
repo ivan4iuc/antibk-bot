@@ -1,52 +1,37 @@
-const puppeteer = require('puppeteer');
-const fs = require('fs');
+const puppeteer = require("puppeteer");
 
-const COOKIE_PATH = 'cookies.json';
-const TARGET_URL = 'https://antibk.org/';
-
-async function run() {
+(async () => {
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: false, // Чтобы ты мог логиниться вручную
     defaultViewport: null,
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    args: ["--start-maximized"],
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
   });
 
   const page = await browser.newPage();
 
-  // Загружаем куки, если есть
-  if (fs.existsSync(COOKIE_PATH)) {
-    const cookies = JSON.parse(fs.readFileSync(COOKIE_PATH));
-    await page.setCookie(...cookies);
-    console.log('[🍪] Cookies загружены');
-  } else {
-    console.log('[🔓] Куки не найдены. Войдите вручную.');
-  }
+  // Шаг 1: зайди на страницу с логами завершённых боёв (фильтр по твоему нику)
+  const url = "https://antibk.org/main.php?filter=Van%20Ciuc&zayvka=1&r=7";
+  await page.goto(url);
 
-  await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
+  // Шаг 2: дай время на ручной логин (10 секунд)
+  console.log("⏳ Подожди 10 секунд для логина...");
+  await page.waitForTimeout(10000);
 
-  // Если куки не были загружены — даём время на ручной логин
-  if (!fs.existsSync(COOKIE_PATH)) {
-    console.log('[⏳] Ожидание логина (60 секунд)...');
-    await new Promise(resolve => setTimeout(resolve, 60000)); // 60 секунд
-    const cookies = await page.cookies();
-    fs.writeFileSync(COOKIE_PATH, JSON.stringify(cookies, null, 2));
-    console.log('[✅] Куки сохранены');
-  }
+  // Шаг 3: жди появления ссылок на логи
+  await page.waitForSelector('a[href^="logs.php?log="]');
+  console.log("✅ Найдены ссылки на логи...");
 
-  // Дальше — твоя логика, например — переход к заявке на бой
-  console.log('[⚔️] Инициализация авто-действий...');
-  try {
-    await page.waitForSelector('a[href="main.php?zayvka=1&r=5"]', { timeout: 10000 });
-    await page.click('a[href="main.php?zayvka=1&r=5"]');
-    console.log('[🎯] Заявка на бой отправлена!');
-  } catch (err) {
-    console.log('[⚠️] Не удалось найти ссылку на бой:', err.message);
-  }
+  // Шаг 4: собери все ссылки
+  const logLinks = await page.$$eval('a[href^="logs.php?log="]', links =>
+    links.map(link => link.href)
+  );
 
-  // Оставь браузер открытым для дебага
+  console.log("📋 Логи завершённых боёв:");
+  logLinks.forEach((link, i) => {
+    console.log(`${i + 1}. ${link}`);
+  });
+
+  // Можно оставить браузер открытым или закрыть:
   // await browser.close();
-}
-
-run().catch(err => {
-  console.error('[💥] Ошибка при запуске скрипта:', err);
-});
+})();
