@@ -36,8 +36,8 @@ async function run() {
   // Дальше — твоя логика, например — переход к заявке на бой
   console.log('[⚔️] Инициализация авто-действий...');
   try {
-    await page.waitForSelector('a[href="main.php?zayvka=1&r=7"]', { timeout: 10000 });
-    await page.click('a[href="main.php?zayvka=1&r=7"]');
+    await page.waitForSelector('a[href="main.php?zayvka=1&r=5"]', { timeout: 10000 });
+    await page.click('a[href="main.php?zayvka=1&r=5"]');
     console.log('[🎯] Заявка на бой отправлена!');
   } catch (err) {
     console.log('[⚠️] Не удалось найти ссылку на бой:', err.message);
