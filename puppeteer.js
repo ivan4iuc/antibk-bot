@@ -1,30 +1,51 @@
-// puppeteer.js
-// Запускает браузер, логинится (если нужно), подаёт заявку на бой, ждёт начала
-// Запуск: node puppeteer.js
-
 const puppeteer = require('puppeteer');
+const fs = require('fs');
 
-(async () => {
+const COOKIES_PATH = 'cookies.json';
+const LOGS_PATH = 'logs.html';
+const TARGET_URL = 'https://antibk.org/main.php?zayvka=1&r=7';
+
+async function saveCookies(page) {
+  const cookies = await page.cookies();
+  fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
+  console.log('[✅] Cookies saved.');
+}
+
+async function loadCookies(page) {
+  const cookies = JSON.parse(fs.readFileSync(COOKIES_PATH));
+  await page.setCookie(...cookies);
+  console.log('[✅] Cookies loaded.');
+}
+
+async function run() {
   const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
-  await page.goto('https://antibk.org/main.php');
 
-  // TODO: вставить авторизацию при необходимости
-  // await page.type('input[name=login]', 'Van Ciuc');
-  // await page.type('input[name=pass]', 'your_password');
-  // await page.click('input[type=submit]');
+  if (fs.existsSync(COOKIES_PATH)) {
+    await page.goto('https://antibk.org/');
+    await loadCookies(page);
+    await page.reload({ waitUntil: 'networkidle2' });
+  } else {
+    console.log('[🔓] No cookies found. Login manually.');
+    await page.goto('https://antibk.org/', { waitUntil: 'networkidle2' });
+    await page.waitForTimeout(30000); // 30 секунд на ручной логин
+    await saveCookies(page);
+  }
 
-  await page.waitForSelector('a[href="main.php?zayvka=1&r=7"]');
-  await page.goto('https://antibk.org/main.php?zayvka=1&r=7');
+  try {
+    await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
 
-  // Подаём заявку на хаотичный бой через 5 минут, таймаут 1 мин, только моего уровня, быстрый
-  await page.waitForSelector('input[name=chaos_start]');
-  await page.select('select[name=chaos_start]', '5');
-  await page.select('select[name=chaos_timeout]', '1');
-  await page.click('input[name=levelonly]');
-  await page.click('input[name=chaos_express]');
-  await page.click('input[type=submit]');
+    // Ждём хотя бы 1 лог боя
+    await page.waitForSelector('a[href*="logs.php?log="]', { timeout: 15000 });
 
-  console.log('Заявка на бой подана');
+    const html = await page.content();
+    fs.writeFileSync(LOGS_PATH, html);
+    console.log(`[📄] Логи сохранены в файл: ${LOGS_PATH}`);
+  } catch (err) {
+    console.error('[⚠️] Ошибка при загрузке логов:', err.message);
+  }
+
   await browser.close();
-})();
+}
+
+run();
