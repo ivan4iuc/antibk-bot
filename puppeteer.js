@@ -1,51 +1,52 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-const COOKIES_PATH = 'cookies.json';
-const LOGS_PATH = 'logs.html';
-const TARGET_URL = 'https://antibk.org/main.php?zayvka=1&r=7';
-
-async function saveCookies(page) {
-  const cookies = await page.cookies();
-  fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
-  console.log('[✅] Cookies saved.');
-}
-
-async function loadCookies(page) {
-  const cookies = JSON.parse(fs.readFileSync(COOKIES_PATH));
-  await page.setCookie(...cookies);
-  console.log('[✅] Cookies loaded.');
-}
+const COOKIE_PATH = 'cookies.json';
+const TARGET_URL = 'https://antibk.org/';
 
 async function run() {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  });
+
   const page = await browser.newPage();
 
-  if (fs.existsSync(COOKIES_PATH)) {
-    await page.goto('https://antibk.org/');
-    await loadCookies(page);
-    await page.reload({ waitUntil: 'networkidle2' });
+  // Загружаем куки, если есть
+  if (fs.existsSync(COOKIE_PATH)) {
+    const cookies = JSON.parse(fs.readFileSync(COOKIE_PATH));
+    await page.setCookie(...cookies);
+    console.log('[🍪] Cookies загружены');
   } else {
-    console.log('[🔓] No cookies found. Login manually.');
-    await page.goto('https://antibk.org/', { waitUntil: 'networkidle2' });
-    await page.waitForTimeout(30000); // 30 секунд на ручной логин
-    await saveCookies(page);
+    console.log('[🔓] Куки не найдены. Войдите вручную.');
   }
 
+  await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
+
+  // Если куки не были загружены — даём время на ручной логин
+  if (!fs.existsSync(COOKIE_PATH)) {
+    console.log('[⏳] Ожидание логина (60 секунд)...');
+    await new Promise(resolve => setTimeout(resolve, 60000)); // 60 секунд
+    const cookies = await page.cookies();
+    fs.writeFileSync(COOKIE_PATH, JSON.stringify(cookies, null, 2));
+    console.log('[✅] Куки сохранены');
+  }
+
+  // Дальше — твоя логика, например — переход к заявке на бой
+  console.log('[⚔️] Инициализация авто-действий...');
   try {
-    await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
-
-    // Ждём хотя бы 1 лог боя
-    await page.waitForSelector('a[href*="logs.php?log="]', { timeout: 15000 });
-
-    const html = await page.content();
-    fs.writeFileSync(LOGS_PATH, html);
-    console.log(`[📄] Логи сохранены в файл: ${LOGS_PATH}`);
+    await page.waitForSelector('a[href="main.php?zayvka=1&r=7"]', { timeout: 10000 });
+    await page.click('a[href="main.php?zayvka=1&r=7"]');
+    console.log('[🎯] Заявка на бой отправлена!');
   } catch (err) {
-    console.error('[⚠️] Ошибка при загрузке логов:', err.message);
+    console.log('[⚠️] Не удалось найти ссылку на бой:', err.message);
   }
 
-  await browser.close();
+  // Оставь браузер открытым для дебага
+  // await browser.close();
 }
 
-run();
+run().catch(err => {
+  console.error('[💥] Ошибка при запуске скрипта:', err);
+});
