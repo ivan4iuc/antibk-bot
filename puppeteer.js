@@ -1,52 +1,35 @@
-const puppeteer = require('puppeteer-core');
-const path = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-
-const BASE_URL = 'https://antibk.org/main.php?zayvka=1&r=7&logs2=';
-
-const PREVIOUS_DAYS = [
-  1753995600,
-  1753909200,
-  1753822800,
-  1753736400,
-  1753650000
-];
+// puppeteer.js
+const puppeteer = require('puppeteer');
+const fs = require('fs/promises');
 
 (async () => {
-  const browser = await puppeteer.launch({
-    headless: false,
-    executablePath: path,
-    args: ['--start-maximized']
+  const browser = await puppeteer.launch({ headless: false });
+  const page = await browser.newPage();
+  await page.goto('https://antibk.org/main.php?zayvka=1&r=7&rnd=1');
+
+  // Подождать появления таблицы завершённых боёв
+  await page.waitForSelector('a[href*="logs2="]');
+
+  // Собрать первые 50 ссылок на логи боёв
+  const battleLinks = await page.evaluate(() => {
+    const anchors = Array.from(document.querySelectorAll('a[href*="logs2="]'));
+    return anchors.slice(0, 50).map(a => a.href);
   });
 
-  const page = await browser.newPage();
-  page.setViewport({ width: 1400, height: 900 });
+  const logs = [];
 
-  console.log('⏳ Подожди 30 секунд для логина...');
-  await new Promise(res => setTimeout(res, 30000));
+  for (let link of battleLinks) {
+    await page.goto(link);
+    await page.waitForTimeout(500); // чуть подождать загрузку
 
-  for (const ts of PREVIOUS_DAYS) {
-    const fullURL = `${BASE_URL}${ts}`;
-    console.log(`🌐 Загружаю: ${fullURL}`);
-    await page.goto(fullURL, { waitUntil: 'networkidle2' });
+    const html = await page.evaluate(() => document.body.innerHTML);
 
-    try {
-      await page.waitForSelector('a[href^="logs.php?log="]', { timeout: 5000 });
-      const logLinks = await page.$$eval('a[href^="logs.php?log="]', links =>
-        links.map(link => link.href)
-      );
-
-      if (logLinks.length > 0) {
-        console.log(`✅ Найдено ${logLinks.length} лог(ов) за ${fullURL}:`);
-        logLinks.forEach(link => console.log('•', link));
-      } else {
-        console.log(`⚠️ Нет логов на ${fullURL}`);
-      }
-    } catch {
-      console.log(`❌ Не удалось загрузить логи на ${fullURL}`);
-    }
-
-    await new Promise(res => setTimeout(res, 2000)); // пауза между переходами
+    logs.push({ url: link, html });
   }
+
+  await fs.writeFile('logs_dump.json', JSON.stringify(logs, null, 2), 'utf8');
+
+  console.log('✅ Логи собраны. Всего:', logs.length);
 
   await browser.close();
 })();
