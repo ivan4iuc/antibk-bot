@@ -1,33 +1,46 @@
-const puppeteer = require("puppeteer");
+const puppeteer = require('puppeteer-core');
 
 (async () => {
   const browser = await puppeteer.launch({
     headless: false,
-    defaultViewport: null,
-    args: ["--start-maximized"],
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    args: ['--start-maximized'],
+    defaultViewport: null
   });
 
   const page = await browser.newPage();
+  await page.goto('https://antibk.org/main.php?zayvka=1&r=7');
 
-  const url = "https://antibk.org/main.php?filter=Van%20Ciuc&zayvka=1&r=7";
-  await page.goto(url);
+  console.log('⏳ Подожди 30 секунд для логина...');
+  await new Promise(resolve => setTimeout(resolve, 30000));
 
-  // Заменили на setTimeout
-  console.log("⏳ Подожди 10 секунд для логина...");
-  await new Promise(resolve => setTimeout(resolve, 10000));
+  // Проверим, что мы всё ещё на странице логов
+  const url = page.url();
+  if (!url.includes('main.php?zayvka=1&r=7')) {
+    console.error('❌ Не на странице логов боёв. Сейчас на: ', url);
+    await page.screenshot({ path: 'wrong_page.png' });
+    await browser.close();
+    return;
+  }
 
-  await page.waitForSelector('a[href^="logs.php?log="]');
-  console.log("✅ Найдены ссылки на логи...");
+  try {
+    await page.waitForSelector('a[href^="logs.php?log="]', { timeout: 60000 });
+    const links = await page.$$eval('a[href^="logs.php?log="]', anchors =>
+      anchors.map(a => a.href)
+    );
 
-  const logLinks = await page.$$eval('a[href^="logs.php?log="]', links =>
-    links.map(link => link.href)
-  );
+    if (links.length === 0) {
+      console.error('❌ Ссылки на логи не найдены.');
+      await page.screenshot({ path: 'no_logs.png' });
+    } else {
+      console.log('✅ Найдены ссылки на логи боёв:');
+      console.log(links);
+    }
 
-  console.log("📋 Логи завершённых боёв:");
-  logLinks.forEach((link, i) => {
-    console.log(`${i + 1}. ${link}`);
-  });
+  } catch (err) {
+    console.error('⚠️ Ошибка при поиске ссылок на логи: ', err.message);
+    await page.screenshot({ path: 'error_logs.png' });
+  }
 
-  // Оставим браузер открытым для анализа
+  await browser.close();
 })();
