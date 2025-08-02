@@ -1,35 +1,61 @@
-// puppeteer.js
-const puppeteer = require('puppeteer');
-const fs = require('fs/promises');
+const puppeteer = require('puppeteer-core');
+const fs = require('fs');
+const path = require('path');
+
+const browserPath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const base = 'https://antibk.org';
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({ headless: false, executablePath: browserPath });
   const page = await browser.newPage();
-  await page.goto('https://antibk.org/main.php?zayvka=1&r=7&rnd=1');
+  await page.goto(`${base}/bk`);
 
-  // Подождать появления таблицы завершённых боёв
-  await page.waitForSelector('a[href*="logs2="]');
+  console.log('⏳ Подожди 30 секунд для логина...');
+  await new Promise(res => setTimeout(res, 30000));
 
-  // Собрать первые 50 ссылок на логи боёв
-  const battleLinks = await page.evaluate(() => {
-    const anchors = Array.from(document.querySelectorAll('a[href*="logs2="]'));
-    return anchors.slice(0, 50).map(a => a.href);
-  });
-
-  const logs = [];
-
-  for (let link of battleLinks) {
-    await page.goto(link);
-    await page.waitForTimeout(500); // чуть подождать загрузку
-
-    const html = await page.evaluate(() => document.body.innerHTML);
-
-    logs.push({ url: link, html });
+  const currentUrl = page.url();
+  if (!currentUrl.includes('main.php')) {
+    console.log('⚠️ Не на главной странице. Попробую перейти вручную...');
+    await page.goto(`${base}/main.php`);
+    await page.waitForTimeout?.(3000);
   }
 
-  await fs.writeFile('logs_dump.json', JSON.stringify(logs, null, 2), 'utf8');
+  console.log('📂 Перехожу в раздел "Завершённые бои"...');
+  await page.goto(`${base}/main.php?zayvka=1&r=7`);
 
-  console.log('✅ Логи собраны. Всего:', logs.length);
+  try {
+    await page.waitForSelector('a[href*="logs2="]', { timeout: 30000 });
+  } catch (e) {
+    console.log('❌ Не удалось найти ссылки на логи.');
+    await browser.close();
+    return;
+  }
+
+  const logPages = await page.$$eval('a[href*="logs2="]', links =>
+    links.map(a => a.href)
+  );
+
+  const logs = [];
+  for (let logPage of logPages.slice(0, 5)) {
+    console.log('🌐 Загружаю:', logPage);
+    try {
+      await page.goto(logPage);
+      const hrefs = await page.$$eval('a[href*="logs.php?log="]', links =>
+        links.map(a => a.href)
+      );
+      logs.push(...hrefs);
+      console.log(`✅ Найдено ${hrefs.length} лог(ов) за ${logPage}:`);
+      hrefs.forEach(url => console.log('•', url));
+    } catch (e) {
+      console.log(`❌ Не удалось загрузить логи на ${logPage}`);
+    }
+
+    if (logs.length >= 50) break;
+  }
+
+  const slicedLogs = logs.slice(0, 50);
+  fs.writeFileSync('logs_dump.json', JSON.stringify(slicedLogs, null, 2));
+  console.log(`✅ Сохранено ${slicedLogs.length} логов в logs_dump.json`);
 
   await browser.close();
 })();
